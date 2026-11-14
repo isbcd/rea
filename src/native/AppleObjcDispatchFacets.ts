@@ -1,3 +1,4 @@
+import { malformedInput } from "../domain/parseFailure.js";
 import { err, ok, type Result } from "../domain/result.js";
 import {
   projectObjcClassMethods,
@@ -170,7 +171,8 @@ export const decodeObjcDispatchFacets = (input: {
               implementation < segment.address + segment.size,
           )
         )
-          throw new RangeError(
+          throw malformedInput(
+            "macho",
             "Method implementation is not in an executable segment",
           );
         implementationLocation = read.location(implementation);

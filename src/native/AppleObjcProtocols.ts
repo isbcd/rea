@@ -1,3 +1,8 @@
+import {
+  decodeLimit,
+  malformedInput,
+  truncatedInput,
+} from "../domain/parseFailure.js";
 import { readObjcPropertyList } from "./AppleObjcProperties.js";
 import type { ObjcSwiftMetadata } from "../domain/native/objcSwiftMetadata.js";
 import type { SwiftNominalReaders } from "./AppleSwiftNominalTypes.js";
@@ -42,7 +47,10 @@ export const createObjcProtocolReader = (input: {
       // `count` is plain uintptr_t data, not a pointer fixup.
       const count = read.u64(address);
       if (count > 20000n)
-        throw new RangeError("Protocol list exceeds 20000 entries");
+        throw decodeLimit("macho", "Protocol list exceeds 20000 entries", {
+          name: "objc_protocol_list_entries",
+          maximum: 20_000,
+        });
       for (let index = 0n; index < count; index++) {
         if (!read.admit()) {
           onTruncated?.();
@@ -113,7 +121,10 @@ export const createObjcProtocolReader = (input: {
     try {
       const protocolSize = read.u32(address + 64n);
       if (protocolSize < 72)
-        throw new RangeError("Truncated Objective-C protocol declaration");
+        throw truncatedInput(
+          "macho",
+          "Truncated Objective-C protocol declaration",
+        );
       const protocolName = name(address);
       // Adopted protocols are independent declarations; decode them before
       // rejecting a parent whose own name is empty.

@@ -290,6 +290,17 @@ checkCounted(
   [],
 );
 
+// A RangeError can mean a stack overflow, a host string or buffer limit, a
+// raw read past the end of a buffer, or whatever its thrower intended. Only
+// hostRangeErrorKind tells them apart; parsers throw a ParseFailureError.
+checkCounted(
+  "direct RangeError interpretation (use hostRangeErrorKind or parseFailureFromCause from src/domain/parseFailure)",
+  "range-error-interpretation",
+  files,
+  /instanceof RangeError/gu,
+  ["src/domain/parseFailure.ts"],
+);
+
 if (baselinesShrunk) {
   const sorted = Object.fromEntries(
     Object.entries(baselines).map(([key, counts]) => [

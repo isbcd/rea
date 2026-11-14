@@ -1,3 +1,4 @@
+import { parseFailureFromCause } from "../domain/parseFailure.js";
 import type { BinaryTarget } from "../domain/binaryTargetTypes.js";
 import type { EvidenceLocation } from "../domain/evidence.js";
 import type { AnalysisError } from "../domain/analysisErrorBase.js";
@@ -133,7 +134,8 @@ const readChainedImportNames = async (
       ),
     );
   } catch (cause) {
-    if (cause instanceof RangeError) return err(cause.message);
+    const failure = parseFailureFromCause(cause, "macho");
+    if (failure !== undefined) return err(failure.message);
     throw cause;
   }
 };

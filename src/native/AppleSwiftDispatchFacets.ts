@@ -1,3 +1,4 @@
+import { decodeLimit, parseFailureFromCause } from "../domain/parseFailure.js";
 import {
   createSwiftContextReader,
   type SwiftContextReader,
@@ -486,7 +487,11 @@ export const decodeSwiftDispatchFacets = (input: {
         const count = read.u32(protocol! + 16n);
         const signatureCount = read.u32(protocol! + 12n);
         if (count > 20_000 || signatureCount > 20_000)
-          throw new RangeError("Swift witness requirement count exceeds 20000");
+          throw decodeLimit(
+            "macho",
+            "Swift witness requirement count exceeds 20000",
+            { name: "swift_witness_requirements", maximum: 20_000 },
+          );
         for (let slot = 0; slot < count; slot++) {
           if (!budget.admit()) break;
           const entry = witness + BigInt((slot + 1) * 8);
@@ -557,12 +562,13 @@ export const decodeSwiftDispatchFacets = (input: {
                 ),
               );
           } catch (cause) {
-            if (!(cause instanceof RangeError)) throw cause;
+            const failure = parseFailureFromCause(cause, "macho");
+            if (failure === undefined) throw cause;
             issues.push(
               issue(
                 "swift_conformances_static_witness_slots",
                 "witness_slot_unresolved",
-                cause.message,
+                failure.message,
                 hex(entry),
               ),
             );

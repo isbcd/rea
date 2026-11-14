@@ -1,3 +1,4 @@
+import { parseFailureFromCause } from "../domain/parseFailure.js";
 import {
   readUniversalMachoImage,
   readUniversalMachoSlice,
@@ -172,7 +173,17 @@ export function* openImageSteps(
           "unsupported-container",
           cause.message,
         );
-      if (cause instanceof RangeError || cause instanceof TypeError)
+      const failure = parseFailureFromCause(cause, "macho");
+      if (failure !== undefined)
+        throw new Il2cppBinaryFormatFailure(
+          failure.kind === "unsupported"
+            ? "unsupported-container"
+            : "malformed-container",
+          failure.message,
+        );
+      // Mach-O slice selection reports an inconsistent FAT or CPU identity as
+      // a TypeError.
+      if (cause instanceof TypeError)
         throw new Il2cppBinaryFormatFailure(
           "malformed-container",
           cause.message,

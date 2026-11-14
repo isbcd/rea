@@ -1,3 +1,4 @@
+import { malformedInput, unsupportedInput } from "../domain/parseFailure.js";
 import type {
   ObjcSwiftMetadata,
   NativeMetadataEvidence,
@@ -64,13 +65,14 @@ export const createSwiftClassVtableDecoder = (input: {
     try {
       const specific = flags >>> 16;
       if ((flags & 0x80) !== 0 || (specific & 0x2000) !== 0)
-        throw new RangeError(
+        throw unsupportedInput(
+          "macho",
           "Generic class or resilient superclass metadata is unsupported",
         );
       if ((specific & 0x8000) === 0) return;
       const initialization = specific & 3;
       if (initialization === 3)
-        throw new RangeError("Unknown metadata initialization kind");
+        throw malformedInput("macho", "Unknown metadata initialization kind");
       const header =
         descriptor +
         44n +
@@ -79,7 +81,8 @@ export const createSwiftClassVtableDecoder = (input: {
       const count = read.u32(header + 4n);
       const positiveWords = read.u32(descriptor + 28n);
       if (count > 20000 || tableOffset + count > positiveWords)
-        throw new RangeError(
+        throw malformedInput(
+          "macho",
           "Swift vtable count or offset exceeds declared metadata bounds",
         );
       for (let index = 0; index < count; index++) {

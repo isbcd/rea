@@ -1,3 +1,4 @@
+import { malformedInput } from "../domain/parseFailure.js";
 import type {
   NativeMetadataEvidence,
   NativeMetadataLocation,
@@ -111,10 +112,14 @@ export const createSwiftContextReader = (
     if (known !== undefined) return known;
     const value = read.relative(descriptor + 8n, field);
     if (value.kind !== "target")
-      throw new RangeError(unresolvedSwiftRelativeReason(value, field));
+      throw malformedInput(
+        "macho",
+        unresolvedSwiftRelativeReason(value, field),
+      );
     const name = read.string(value.target);
     if (name.length === 0)
-      throw new RangeError(
+      throw malformedInput(
+        "macho",
         `Swift ${field === "protocolName" ? "protocol" : "type"} descriptor name is empty`,
       );
     names.set(descriptor, name);
@@ -301,7 +306,8 @@ export const decodeSwiftNominalTypes = (input: {
     try {
       const value = read.relative(record, "typeMetadataRecord");
       if (value.kind !== "target")
-        throw new RangeError(
+        throw malformedInput(
+          "macho",
           unresolvedSwiftRelativeReason(value, "typeMetadataRecord"),
         );
       descriptor = value.target;

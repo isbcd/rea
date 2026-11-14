@@ -4,7 +4,10 @@ import {
   type ZeroFillMapping,
 } from "../../domain/virtualFileMapping.js";
 import type { PeDataDirectory } from "../../domain/peOptionalHeader.js";
-import { ParseFailureError } from "../../domain/parseFailure.js";
+import {
+  ParseFailureError,
+  type ParseFailure,
+} from "../../domain/parseFailure.js";
 
 /** Native container facts a format failure can name. */
 interface BinaryFormatFailureFacts {
@@ -17,9 +20,9 @@ interface BinaryFormatFailureFacts {
 }
 
 /** Distinguish corrupt recognized binaries from containers outside parser coverage. */
-export class BinaryFormatFailure extends ParseFailureError<
-  "malformed" | "truncated" | "unsupported"
-> {
+export class BinaryFormatFailure extends ParseFailureError {
+  declare readonly failure: Exclude<ParseFailure, { readonly kind: "limit" }>;
+
   constructor(
     kind: "malformed" | "truncated" | "unsupported",
     message: string,
@@ -32,6 +35,10 @@ export class BinaryFormatFailure extends ParseFailureError<
         : { kind, format, detail: message, ...at },
     );
     this.name = "BinaryFormatFailure";
+  }
+
+  override get kind(): "malformed" | "truncated" | "unsupported" {
+    return this.failure.kind;
   }
 
   /** The image holds the metadata, in a form this reader cannot decode. */
@@ -51,7 +58,9 @@ export class BinaryMappingFailure extends BinaryFormatFailure {
 }
 
 /** Resource boundary exceeded while decoding metadata or native container structure. */
-export class BinaryResourceFailure extends ParseFailureError<"limit"> {
+export class BinaryResourceFailure extends ParseFailureError {
+  declare readonly failure: Extract<ParseFailure, { readonly kind: "limit" }>;
+
   constructor(
     readonly boundary: "build-info" | "structure" | "search",
     readonly maximum_bytes: number,

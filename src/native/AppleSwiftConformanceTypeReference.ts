@@ -1,3 +1,4 @@
+import { malformedInput } from "../domain/parseFailure.js";
 import {
   createSwiftContextReader,
   type SwiftContextReader,
@@ -80,7 +81,7 @@ export const requiredSwiftRelativeTarget = (
 ): bigint => {
   const value = relative(field, kind);
   if (value.kind !== "target")
-    throw new RangeError(unresolvedReason(value, kind));
+    throw malformedInput("macho", unresolvedReason(value, kind));
   return value.target;
 };
 
