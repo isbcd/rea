@@ -14,6 +14,7 @@ import { compareUnicodeCodePoints } from "../unicodeCodePointOrder.js";
 
 import { semanticCopiedReferencePath } from "./javascriptSemanticCopiedReferencePaths.js";
 import { semanticMethodDefinitionExpression } from "./javascriptSemanticEvaluationOrder.js";
+import { javaScriptExecutions } from "./javascriptSemanticExecutionPoints.js";
 import { childNodes } from "./javascriptSemanticTraversal.js";
 import type {
   IterationSourceValue,
@@ -294,21 +295,7 @@ const guardedBodyMayCall = (body: t.BlockStatement): boolean => {
       for (const child of children)
         pending.push({ node: child, parent: node, finish: false });
     } else {
-      const direct =
-        t.isCallExpression(node) ||
-        t.isOptionalCallExpression(node) ||
-        t.isNewExpression(node) ||
-        t.isTaggedTemplateExpression(node) ||
-        t.isMemberExpression(node) ||
-        t.isOptionalMemberExpression(node) ||
-        t.isBinaryExpression(node) ||
-        t.isUnaryExpression(node) ||
-        t.isUpdateExpression(node) ||
-        t.isSpreadElement(node) ||
-        t.isForOfStatement(node) ||
-        t.isAwaitExpression(node) ||
-        ((t.isVariableDeclarator(node) || t.isAssignmentExpression(node)) &&
-          semanticSourceFacts(node, parent).propertyReads.length > 0);
+      const direct = javaScriptExecutions(node, parent).length > 0;
       guardedExecutions.set(
         node,
         direct ||
