@@ -5,7 +5,7 @@ import {
 } from "../domain/analysisErrorBase.js";
 import { analysisErrorWithCleanupFailure } from "../domain/analysisErrorCleanup.js";
 import { analysisErrorWithCancellation } from "../domain/analysisErrorCancellation.js";
-import { AnalysisCancelledError } from "../domain/analysisErrorCore.js";
+import { cancelledBy } from "../domain/analysisErrorCore.js";
 import {
   projectAnalysisError,
   projectAnalysisErrorWithoutCapturedOutput,
@@ -101,7 +101,7 @@ export const finishAnalysisCommand = async <
   if (!result.ok && signal.aborted)
     analysisErrorWithCancellation(
       result.error,
-      new AnalysisCancelledError(canonicalOperation, { cause: signal.reason }),
+      cancelledBy(canonicalOperation, signal),
     );
   if (initialFailure !== undefined && cleanup === undefined && !result.ok) {
     // Close may mutate cleanup state; preserve the snapshot and add later failures.
@@ -144,8 +144,7 @@ export const finishAnalysisCommand = async <
       result = signal.aborted
         ? {
             ok: false,
-            error: new AnalysisCancelledError(canonicalOperation, {
-              cause: signal.reason,
+            error: cancelledBy(canonicalOperation, signal, {
               partialObservation: completed,
               diagnostics: {
                 cleanup_history: projectFailure(recoveredCleanup),
@@ -158,8 +157,7 @@ export const finishAnalysisCommand = async <
   if (result.ok && signal.aborted)
     result = {
       ok: false,
-      error: new AnalysisCancelledError(canonicalOperation, {
-        cause: signal.reason,
+      error: cancelledBy(canonicalOperation, signal, {
         partialObservation: result.value,
       }),
     };

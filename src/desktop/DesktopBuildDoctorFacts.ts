@@ -9,7 +9,11 @@ import type {
   DesktopBuildFacts,
   DesktopBuildFactsInput,
 } from "../application/DesktopBuildDoctor.js";
-import { AnalysisCancelledError } from "../domain/analysisErrorCore.js";
+import {
+  AnalysisCancelledError,
+  cancelledBy,
+  carriedReason,
+} from "../domain/analysisErrorCore.js";
 import { safeParseJson } from "../domain/safeJson.js";
 import {
   readRegularFileText,
@@ -449,8 +453,7 @@ const solveEndpoint = async (
   input: DesktopBuildFactsInput,
   runner: DesktopBuildCommand,
 ): Promise<string | null | undefined> => {
-  if (input.signal.aborted)
-    throw new AnalysisCancelledError("doctor", { cause: input.signal.reason });
+  if (input.signal.aborted) throw cancelledBy("doctor", input.signal);
   if (runner.status !== "found") return null;
   const discovery = await attempt(input, runner.path, [
     "config",
@@ -515,15 +518,9 @@ const canReadModelConfig = async (
   input: DesktopBuildFactsInput,
 ): Promise<boolean> => {
   try {
-    if (input.signal.aborted)
-      throw new AnalysisCancelledError("doctor", {
-        cause: input.signal.reason,
-      });
+    if (input.signal.aborted) throw cancelledBy("doctor", input.signal);
     const candidate = await stat(path);
-    if (input.signal.aborted)
-      throw new AnalysisCancelledError("doctor", {
-        cause: input.signal.reason,
-      });
+    if (input.signal.aborted) throw cancelledBy("doctor", input.signal);
     if (!candidate.isFile() || candidate.size > CONFIG_BYTES) return false;
     await readRegularFileText(path, {
       signal: input.signal,
@@ -532,7 +529,7 @@ const canReadModelConfig = async (
           throw new Error("Configuration exceeds the read limit");
       },
       cancellationFailure: (reason) =>
-        new AnalysisCancelledError("doctor", { cause: reason }),
+        cancelledBy("doctor", carriedReason(reason)),
     });
     return true;
   } catch (cause: unknown) {
@@ -541,10 +538,7 @@ const canReadModelConfig = async (
       throw cause;
     }
     if (cause instanceof AnalysisCancelledError) throw cause;
-    if (input.signal.aborted)
-      throw new AnalysisCancelledError("doctor", {
-        cause: input.signal.reason,
-      });
+    if (input.signal.aborted) throw cancelledBy("doctor", input.signal);
     return false;
   }
 };

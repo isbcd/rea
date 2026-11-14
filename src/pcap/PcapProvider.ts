@@ -19,6 +19,8 @@ import {
   AnalysisOutputError,
   AnalysisProtocolError,
   AnalysisResourceConstraintError,
+  cancelledBy,
+  carriedReason,
 } from "../domain/analysisErrorCore.js";
 import {
   AnalysisError,
@@ -761,12 +763,13 @@ export class PcapProvider {
         ? failure
         : failure instanceof ArtifactReaderFailure &&
             failure.reason === "cancelled"
-          ? new AnalysisCancelledError(operation, {
-              cause: artifactFileCancellationCause(failure),
-              ...(failure.partialObservation === undefined
+          ? cancelledBy(
+              operation,
+              carriedReason(artifactFileCancellationCause(failure)),
+              failure.partialObservation === undefined
                 ? {}
-                : { partialObservation: failure.partialObservation }),
-            })
+                : { partialObservation: failure.partialObservation },
+            )
           : new AnalysisProtocolError(
               `Packet-capture analysis failed: ${failure instanceof Error ? failure.message : String(failure)}`,
               { cause: failure },
@@ -799,10 +802,7 @@ export class PcapProvider {
     let snapshot: PcapSnapshot | undefined;
     let result: Result<AnalysisExecution, AnalysisError>;
     try {
-      if (signal?.aborted)
-        throw new AnalysisCancelledError(request.operation, {
-          cause: signal.reason,
-        });
+      if (signal?.aborted) throw cancelledBy(request.operation, signal);
       const { selection, client } = await this.client(
         request.operation,
         signal,
@@ -853,8 +853,7 @@ export class PcapProvider {
     }
     if (signal?.aborted && result.ok)
       result = err(
-        new AnalysisCancelledError(request.operation, {
-          cause: signal.reason,
+        cancelledBy(request.operation, signal, {
           partialObservation: createPcapEvidence(request, result.value),
         }),
       );
@@ -868,8 +867,7 @@ export class PcapProvider {
       const cleanup = await this.discard(snapshot);
       if (signal?.aborted && result.ok)
         result = err(
-          new AnalysisCancelledError(request.operation, {
-            cause: signal.reason,
+          cancelledBy(request.operation, signal, {
             partialObservation: createPcapEvidence(request, result.value),
           }),
         );

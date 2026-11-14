@@ -1,8 +1,8 @@
 import { setImmediate as yieldToEventLoop } from "node:timers/promises";
 import {
-  AnalysisCancelledError,
   AnalysisProtocolError,
   AnalysisResourceConstraintError,
+  cancelledBy,
 } from "../domain/analysisErrorCore.js";
 import { parsePcapHttpUri } from "./PcapHttpUri.js";
 import { fixedAllowanceOptions } from "../domain/fixedAllowanceRemediation.js";
@@ -16,8 +16,7 @@ const MAX_RETAINED_BYTES = 16 * 1024 * 1024;
 const MAX_DECODED_BYTES = 128 * 1024 * 1024;
 
 const assertOutputReadActive = (signal: AbortSignal | undefined): void => {
-  if (signal?.aborted)
-    throw new AnalysisCancelledError(OPERATION, { cause: signal.reason });
+  if (signal?.aborted) throw cancelledBy(OPERATION, signal);
 };
 
 const protocolFailure = (reason: string): never => {

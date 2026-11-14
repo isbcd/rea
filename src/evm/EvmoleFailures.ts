@@ -15,11 +15,12 @@ import {
   AnalysisAccessDeniedError,
   AnalysisArtifactChangedError,
   AnalysisCapabilityUnavailableError,
-  AnalysisCancelledError,
   AnalysisInputError,
   AnalysisOutputError,
   AnalysisResourceConstraintError,
   AnalysisTimeoutError,
+  cancelledBy,
+  carriedReason,
 } from "../domain/analysisErrorCore.js";
 import { ProviderAdapterError } from "../domain/providerAdapterError.js";
 import { ProviderCleanupError } from "../domain/providerCleanupError.js";
@@ -119,11 +120,11 @@ export const evmInterfaceFailure = (
         { operation: "inspect_evm_interface", cause },
       );
     if (cause.reason === "cancelled")
-      return new AnalysisCancelledError("inspect_evm_interface", {
-        cause: cause.cancellation?.reason,
-        ...outputOptions,
-        ...cleanupOptions,
-      });
+      return cancelledBy(
+        "inspect_evm_interface",
+        carriedReason(cause.cancellation?.reason),
+        { ...outputOptions, ...cleanupOptions },
+      );
     if (cause.reason === "timeout")
       return new AnalysisTimeoutError("inspect_evm_interface", timeoutMs, {
         ...outputOptions,
@@ -196,10 +197,11 @@ export const evmInterfaceFailure = (
   }
   if (cause instanceof ArtifactReaderFailure) {
     if (cause.reason === "cancelled")
-      return new AnalysisCancelledError("inspect_evm_interface", {
-        cause: artifactFileCancellationCause(cause),
-        ...cleanupOptions,
-      });
+      return cancelledBy(
+        "inspect_evm_interface",
+        carriedReason(artifactFileCancellationCause(cause)),
+        { ...cleanupOptions },
+      );
     if (cause.reason === "integrity")
       return new AnalysisArtifactChangedError(
         "inspect_evm_interface",

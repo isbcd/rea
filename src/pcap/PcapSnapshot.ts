@@ -6,9 +6,10 @@ import { AnalysisError } from "../domain/analysisErrorBase.js";
 import {
   AnalysisAccessDeniedError,
   AnalysisArtifactChangedError,
-  AnalysisCancelledError,
   AnalysisInputError,
   AnalysisResourceConstraintError,
+  cancelledBy,
+  carriedReason,
 } from "../domain/analysisErrorCore.js";
 import { fixedAllowanceOptions } from "../domain/fixedAllowanceRemediation.js";
 import { ProviderCleanupError } from "../domain/providerCleanupError.js";
@@ -80,8 +81,7 @@ export class PcapSnapshot {
       );
       this.completionCleanup.set(handle, cleanup);
       if (signal?.aborted !== true) throw cleanup;
-      const cancelled = new AnalysisCancelledError(OPERATION, {
-        cause: signal.reason,
+      const cancelled = cancelledBy(OPERATION, signal, {
         cleanup: {
           reason: "Owned snapshot descriptor close could not be confirmed",
           resources: [this.path],
@@ -225,9 +225,7 @@ export class PcapSnapshot {
         cause instanceof RegularFileAdmissionFailure ? cause.cause : cause;
       const cancellation = regularFileCancellation(primary);
       if (cancellation !== undefined)
-        throw new AnalysisCancelledError(OPERATION, {
-          cause: cancellation.reason,
-        });
+        throw cancelledBy(OPERATION, carriedReason(cancellation.reason));
       if (cause instanceof AnalysisError) throw cause;
       throw privateWorkspaceFailure("pcap", OPERATION, primary, this.root.path);
     }
@@ -282,9 +280,7 @@ export class PcapSnapshot {
         cause instanceof RegularFileAdmissionFailure ? cause.cause : cause;
       const cancellation = regularFileCancellation(primary);
       if (cancellation !== undefined)
-        throw new AnalysisCancelledError(OPERATION, {
-          cause: cancellation.reason,
-        });
+        throw cancelledBy(OPERATION, carriedReason(cancellation.reason));
       if (cause instanceof AnalysisError) throw cause;
       throw new AnalysisArtifactChangedError(
         OPERATION,

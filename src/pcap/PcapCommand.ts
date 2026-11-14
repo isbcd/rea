@@ -14,11 +14,12 @@ import {
 } from "../domain/analysisErrorBase.js";
 import { createPcapDiagnosticProjection } from "./PcapDiagnosticOutput.js";
 import {
-  AnalysisCancelledError,
   AnalysisProtocolError,
   AnalysisResourceConstraintError,
   AnalysisTimeoutError,
   AnalysisUnsupportedTargetError,
+  cancelledBy,
+  carriedReason,
 } from "../domain/analysisErrorCore.js";
 import {
   OwnedCommandFailure,
@@ -104,8 +105,7 @@ export const runPcapCommand = async (options: {
         snapshot.diagnosticTruncated === true ||
         snapshot.outputIncomplete === true,
     });
-  if (signal?.aborted)
-    throw new AnalysisCancelledError(operation, { cause: signal.reason });
+  if (signal?.aborted) throw cancelledBy(operation, signal);
   const hostEnvironment = {
     ...options.environment,
     LC_ALL: "C",
@@ -205,9 +205,10 @@ export const runPcapCommand = async (options: {
       throw cause;
     }
     if (cause instanceof ArtifactReaderFailure && cause.reason === "cancelled")
-      throw new AnalysisCancelledError(operation, {
-        cause: artifactFileCancellationCause(cause),
-      });
+      throw cancelledBy(
+        operation,
+        carriedReason(artifactFileCancellationCause(cause)),
+      );
     if (
       cause instanceof OwnedCommandFailure &&
       cause.cleanupOwner !== undefined
@@ -220,8 +221,7 @@ export const runPcapCommand = async (options: {
           ? { stdout: "", stderr: "", truncated: true }
           : captureDiagnostic(cause.snapshot),
       );
-    const details = {
-      cause,
+    const detailsWithoutCause = {
       ...(cause instanceof OwnedCommandFailure && cause.snapshot !== null
         ? {
             capturedOutput: captureDiagnostic(cause.snapshot),
@@ -238,11 +238,13 @@ export const runPcapCommand = async (options: {
             }
           : {}),
     };
+    const details = { cause, ...detailsWithoutCause };
     if (cause instanceof OwnedCommandFailure && cause.reason === "cancelled")
-      throw new AnalysisCancelledError(operation, {
-        ...details,
-        cause: cause.cancellation?.reason,
-      });
+      throw cancelledBy(
+        operation,
+        carriedReason(cause.cancellation?.reason),
+        detailsWithoutCause,
+      );
     if (
       cause instanceof OwnedCommandFailure &&
       cause.snapshot?.memoryLimitReached === true

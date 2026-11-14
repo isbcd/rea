@@ -14,7 +14,6 @@ import {
 } from "../domain/analysisErrorBase.js";
 import { projectAnalysisError } from "../domain/analysisErrorProjection.js";
 import {
-  AnalysisCancelledError,
   AnalysisArtifactChangedError,
   AnalysisAccessDeniedError,
   AnalysisInputError,
@@ -22,6 +21,8 @@ import {
   AnalysisResourceConstraintError,
   AnalysisTimeoutError,
   AnalysisCapabilityUnavailableError,
+  cancelledBy,
+  carriedReason,
 } from "../domain/analysisErrorCore.js";
 import { ProviderCleanupError } from "../domain/providerCleanupError.js";
 import { OwnedCommandFailure } from "../process/OwnedCommand.js";
@@ -159,13 +160,15 @@ const classifyWabtFailure = (
     (cause instanceof ArtifactReaderFailure && cause.reason === "cancelled") ||
     (cause instanceof Error && cause.name === "AbortError")
   )
-    return new AnalysisCancelledError("inspect_wasm_artifact", {
-      cause:
+    return cancelledBy(
+      "inspect_wasm_artifact",
+      carriedReason(
         cause instanceof ArtifactReaderFailure
           ? artifactFileCancellationCause(cause)
           : cause,
-      ...artifactOptions,
-    });
+      ),
+      { ...artifactOptions },
+    );
   if (cause instanceof OwnedCommandFailure) {
     const capturedOutput =
       cause.snapshot === null
@@ -177,11 +180,11 @@ const classifyWabtFailure = (
               stderr: cause.snapshot.stderr.text,
               truncated: cause.snapshot.diagnosticTruncated ?? false,
             };
-    const options = {
-      cause,
+    const optionsWithoutCause = {
       ...(capturedOutput === undefined ? {} : { capturedOutput }),
       ...(versionProbe === undefined ? {} : { diagnostics: versionProbe }),
     };
+    const options = { cause, ...optionsWithoutCause };
     // Classify once before cleanup takes precedence, so the primary remains actionable.
     const timeoutMs =
       execution?.commandTimeoutMs ?? DEFAULT_WASM_COMMAND_TIMEOUT_MS;
@@ -238,11 +241,13 @@ const classifyWabtFailure = (
         { operation: "inspect_wasm_artifact", cause },
       );
     if (cause.reason === "cancelled")
-      return new AnalysisCancelledError("inspect_wasm_artifact", {
-        ...options,
-        cause:
+      return cancelledBy(
+        "inspect_wasm_artifact",
+        carriedReason(
           cause.cancellation === undefined ? cause : cause.cancellation.reason,
-      });
+        ),
+        optionsWithoutCause,
+      );
     if (timeout !== undefined) return timeout;
     if (cause.reason === "output-limit")
       return new AnalysisResourceConstraintError(
