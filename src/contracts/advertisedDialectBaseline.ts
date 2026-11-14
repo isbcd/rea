@@ -17,7 +17,6 @@ export const ADVERTISED_INPUT_DIALECT_BASELINE: Readonly<
     "input keyword $schema": 256,
     "input keyword allOf": 10,
     "input keyword const": 81,
-    "input keyword default": 2,
     "input keyword exclusiveMinimum": 61,
     "input keyword format": 20,
     "input keyword minProperties": 12,
