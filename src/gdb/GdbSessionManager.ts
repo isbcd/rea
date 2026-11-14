@@ -14,6 +14,7 @@ import {
   AnalysisTimeoutError,
   cancelledBy,
   OwnerCancellation,
+  carriedReason,
 } from "../domain/analysisErrorCore.js";
 import {
   GDB_SESSION_TOOLS,
@@ -123,8 +124,7 @@ const cancelledWithCallerReason = (
   signal: AbortSignal,
   previous?: AnalysisCancelledError,
 ): AnalysisCancelledError => {
-  const cancellation = new AnalysisCancelledError(operation, {
-    cause: signal.reason,
+  const cancellation = cancelledBy(operation, signal, {
     cleanupPrimary: previous,
     ...(previous?.diagnostics === undefined
       ? {}
@@ -756,12 +756,7 @@ export class GdbSessionManager {
       AnalysisError
     >
   > {
-    if (signal?.aborted)
-      return err(
-        new AnalysisCancelledError("start_gdb_session", {
-          cause: signal.reason,
-        }),
-      );
+    if (signal?.aborted) return err(cancelledBy("start_gdb_session", signal));
     const occupied = this.#sessions.size + this.#sessionReservations;
     if (occupied >= this.#maxSessions.value)
       return err(
@@ -851,7 +846,7 @@ export class GdbSessionManager {
         (signal?.aborted && cause === signal.reason) ||
         cause instanceof AnalysisCancelledError
       )
-        return err(new AnalysisCancelledError("start_gdb_session", { cause }));
+        return err(cancelledBy("start_gdb_session", carriedReason(cause)));
       const code: unknown =
         cause instanceof Error && "code" in cause ? cause.code : undefined;
       if (
@@ -961,11 +956,7 @@ export class GdbSessionManager {
         session.startupResolve = resolve;
         session.startupReject = reject;
         startupAbortListener = () =>
-          reject(
-            new AnalysisCancelledError("start_gdb_session", {
-              cause: signal?.reason,
-            }),
-          );
+          reject(cancelledBy("start_gdb_session", signal));
         signal?.addEventListener("abort", startupAbortListener, {
           once: true,
         });
@@ -991,10 +982,7 @@ export class GdbSessionManager {
         );
         startupTimer.unref();
       });
-      if (signal?.aborted)
-        throw new AnalysisCancelledError("start_gdb_session", {
-          cause: signal.reason,
-        });
+      if (signal?.aborted) throw cancelledBy("start_gdb_session", signal);
       const autoLoad = await this.#request(
         session,
         "-gdb-set auto-load off",
@@ -1047,16 +1035,10 @@ export class GdbSessionManager {
           );
         session.inferiorTtyVerified = true;
       }
-      if (signal?.aborted)
-        throw new AnalysisCancelledError("start_gdb_session", {
-          cause: signal.reason,
-        });
+      if (signal?.aborted) throw cancelledBy("start_gdb_session", signal);
       // Give queued exit notifications a turn before publishing startup.
       await new Promise<void>((resolve) => setImmediate(resolve));
-      if (signal?.aborted)
-        throw new AnalysisCancelledError("start_gdb_session", {
-          cause: signal.reason,
-        });
+      if (signal?.aborted) throw cancelledBy("start_gdb_session", signal);
       if (session.exited || session.protocolError !== undefined)
         throw new Error(
           session.protocolError ?? "GDB exited during startup readiness.",
@@ -1165,14 +1147,14 @@ export class GdbSessionManager {
             cleanupResources: [session.id],
           });
         const cleanup = { reason: stopped.reason, resources: [session.id] };
-        const details = {
-          cause,
+        const detailsWithoutCause = {
           capturedOutput,
           cleanup,
           ...(startupEvidence === undefined
             ? {}
             : { partialObservation: startupEvidence }),
         };
+        const details = { cause, ...detailsWithoutCause };
         if (cause instanceof AnalysisTimeoutError)
           return err(
             retainCleanup(
@@ -1184,7 +1166,13 @@ export class GdbSessionManager {
           );
         if (cause instanceof AnalysisCancelledError)
           return err(
-            retainCleanup(new AnalysisCancelledError(cause.operation, details)),
+            retainCleanup(
+              cancelledBy(
+                cause.operation,
+                carriedReason(cause),
+                detailsWithoutCause,
+              ),
+            ),
           );
         const startupFailureMessage = gdbErrorMessage(cause);
         return err(
@@ -1198,16 +1186,20 @@ export class GdbSessionManager {
           ),
         );
       }
-      const errorDetails = {
-        cause,
+      const errorDetailsWithoutCause = {
         capturedOutput,
         ...(startupEvidence === undefined
           ? {}
           : { partialObservation: startupEvidence }),
       };
+      const errorDetails = { cause, ...errorDetailsWithoutCause };
       const error =
         cause instanceof AnalysisCancelledError
-          ? new AnalysisCancelledError("start_gdb_session", errorDetails)
+          ? cancelledBy(
+              "start_gdb_session",
+              carriedReason(cause),
+              errorDetailsWithoutCause,
+            )
           : cause instanceof AnalysisTimeoutError
             ? new AnalysisTimeoutError(
                 cause instanceof GdbCommandTimeoutError
@@ -1435,7 +1427,7 @@ export class GdbSessionManager {
       const error =
         cause instanceof AnalysisError
           ? cause
-          : new AnalysisCancelledError("gdb_console", { cause });
+          : cancelledBy("gdb_console", carriedReason(cause));
       if (error.cleanupIncomplete) session.cleanupFailures.add(error);
       return err(error);
     }
@@ -1651,7 +1643,8 @@ export class GdbSessionManager {
 
   async #drainStartsAndCloseSessions(): Promise<void> {
     const active = [...this.#activeStarts.entries()];
-    for (const [controller] of active) controller.abort();
+    for (const [controller] of active)
+      controller.abort(OwnerCancellation.ownerClosed);
     await Promise.allSettled(active.map(([, start]) => start));
     await Promise.all(
       [...this.#sessions.values()].map((session) => session.commandTail),
@@ -2324,8 +2317,7 @@ export class GdbSessionManager {
         void this.#stopDebuggerOnly(session).then((stopped) => {
           if (stopped.status !== "incomplete") {
             pending.reject(
-              new AnalysisCancelledError("gdb_console", {
-                cause: signal?.reason,
+              cancelledBy("gdb_console", carriedReason(signal?.reason), {
                 partialObservation: evidence,
               }),
             );
@@ -2337,8 +2329,7 @@ export class GdbSessionManager {
             stopped.reason,
           );
           pending.reject(
-            new AnalysisCancelledError("gdb_console", {
-              cause: signal?.reason,
+            cancelledBy("gdb_console", carriedReason(signal?.reason), {
               cleanup: {
                 reason: stopped.reason,
                 resources: [session.id],
@@ -2540,7 +2531,6 @@ const waitForGdbCommandTurn = (
 ): Promise<void> => {
   if (signal === undefined) return previous;
   return waitForAbortable(previous, signal).then((outcome) => {
-    if (outcome === ABORTED)
-      throw new AnalysisCancelledError("gdb_console", { cause: signal.reason });
+    if (outcome === ABORTED) throw cancelledBy("gdb_console", signal);
   });
 };

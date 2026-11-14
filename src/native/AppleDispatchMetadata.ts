@@ -14,12 +14,13 @@ import {
   type BinaryTarget,
 } from "../domain/binaryTargetTypes.js";
 import {
-  AnalysisCancelledError,
   AnalysisArtifactChangedError,
   AnalysisAccessDeniedError,
   AnalysisCapabilityUnavailableError,
   AnalysisResourceConstraintError,
   AnalysisUnsupportedTargetError,
+  cancelledBy,
+  carriedReason,
 } from "../domain/analysisErrorCore.js";
 import {
   ArtifactFileCleanupFailure,
@@ -362,10 +363,8 @@ export const inspectAppleDispatchMetadata = async (
         }
       : { maximum_bytes: options.maxInputBytes, source: "caller" as const };
   const maximumBytes = admission.maximum_bytes;
-  const cancelled = () =>
-    new AnalysisCancelledError(OPERATION, {
-      cause: signal?.reason,
-    });
+  // Called only after the caller's signal aborted.
+  const cancelled = () => cancelledBy(OPERATION, carriedReason(signal?.reason));
   const { bytes, digest } = await withArtifactRegularFile(
     target.path,
     resources,
@@ -431,9 +430,10 @@ export const appleDispatchMetadataFailure = (
           )
         : physical?.completionCancellation === undefined
           ? undefined
-          : new AnalysisCancelledError(OPERATION, {
-              cause: physical.completionCancellation.reason,
-            });
+          : cancelledBy(
+              OPERATION,
+              carriedReason(physical.completionCancellation.reason),
+            );
     const failure = new ProviderCleanupError(
       IDENTITY.id,
       cause.cleanup.resources,
@@ -480,9 +480,10 @@ const appleDispatchMetadataPrimaryFailure = (
         { cause },
       );
     if (cause instanceof ArtifactReaderFailure && cause.reason === "cancelled")
-      return new AnalysisCancelledError(OPERATION, {
-        cause: artifactFileCancellationCause(cause),
-      });
+      return cancelledBy(
+        OPERATION,
+        carriedReason(artifactFileCancellationCause(cause)),
+      );
     if (
       cause instanceof ArtifactReaderFailure &&
       cause.reason === "unavailable"

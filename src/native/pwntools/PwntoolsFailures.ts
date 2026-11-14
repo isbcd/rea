@@ -19,11 +19,12 @@ import type { ProviderProcessSnapshot } from "../../process/ProviderProcess.js";
 import {
   AnalysisAccessDeniedError,
   AnalysisArtifactChangedError,
-  AnalysisCancelledError,
   AnalysisInputError,
   AnalysisOutputError,
   AnalysisTimeoutError,
   AnalysisResourceConstraintError,
+  cancelledBy,
+  carriedReason,
 } from "../../domain/analysisErrorCore.js";
 import { ProviderAdapterError } from "../../domain/providerAdapterError.js";
 import { ProviderCleanupError } from "../../domain/providerCleanupError.js";
@@ -195,13 +196,15 @@ const classifyPwntoolsDecoderFailure = (
         { operation: context.operation, cause },
       );
     if (cause.reason === "cancelled")
-      return new AnalysisCancelledError(context.operation, {
-        ...outputOptions,
-        cause:
+      return cancelledBy(
+        context.operation,
+        carriedReason(
           cause.cancellation === undefined
             ? cause.cause
             : cause.cancellation.reason,
-      });
+        ),
+        { ...outputOptions },
+      );
     if (cause.reason === "timeout") {
       const timeoutMs = context.timeoutMs ?? PWNTOOLS_LIMITS.command_timeout_ms;
       return new AnalysisTimeoutError(context.operation, timeoutMs, {
@@ -311,12 +314,15 @@ const classifyPwntoolsDecoderFailure = (
         },
       );
     if (cause.reason === "cancelled") {
-      const error = new AnalysisCancelledError(context.operation, {
-        cause: artifactFileCancellationCause(cause),
-        cleanup: cause.cleanup,
-        partialObservation: cause.partialObservation,
-        capturedOutput: context.precedingOutput,
-      });
+      const error = cancelledBy(
+        context.operation,
+        carriedReason(artifactFileCancellationCause(cause)),
+        {
+          cleanup: cause.cleanup,
+          partialObservation: cause.partialObservation,
+          capturedOutput: context.precedingOutput,
+        },
+      );
       bindArtifactFileCleanup(cause, error);
       return error;
     }

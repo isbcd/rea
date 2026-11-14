@@ -15,6 +15,8 @@ import {
   AnalysisCancelledError,
   AnalysisCapabilityUnavailableError,
   AnalysisOutputError,
+  cancelledBy,
+  carriedReason,
 } from "../../domain/analysisErrorCore.js";
 import { ProviderAdapterError } from "../../domain/providerAdapterError.js";
 import {
@@ -98,8 +100,7 @@ export const inspectPwndbgCore = async ({
     });
   const checkCancelled = () => {
     if (options?.signal?.aborted)
-      throw new AnalysisCancelledError(OPERATION, {
-        cause: options.signal.reason,
+      throw cancelledBy(OPERATION, options.signal, {
         capturedOutput: diagnostics,
       });
   };
@@ -229,14 +230,17 @@ export const inspectPwndbgCore = async ({
         cause instanceof ArtifactReaderFailure &&
         cause.reason === "cancelled"
       ) {
-        const error = new AnalysisCancelledError(OPERATION, {
-          cause: artifactFileCancellationCause(cause),
-          capturedOutput: recordedCrashStageOutput(diagnostics, output),
-          ...(cause instanceof ArtifactReaderFailure &&
-          cause.cleanup !== undefined
-            ? { cleanup: cause.cleanup }
-            : {}),
-        });
+        const error = cancelledBy(
+          OPERATION,
+          carriedReason(artifactFileCancellationCause(cause)),
+          {
+            capturedOutput: recordedCrashStageOutput(diagnostics, output),
+            ...(cause instanceof ArtifactReaderFailure &&
+            cause.cleanup !== undefined
+              ? { cleanup: cause.cleanup }
+              : {}),
+          },
+        );
         bindArtifactFileCleanup(cause, error);
         throw pwndbgContextFinalizationFailure(error, finalization);
       }
@@ -329,10 +333,11 @@ const completedReplyFailure = (
 ): AnalysisError => {
   const cancellation =
     cause.reason === "cancelled"
-      ? new AnalysisCancelledError(OPERATION, {
-          cause: artifactFileCancellationCause(cause),
-          capturedOutput,
-        })
+      ? cancelledBy(
+          OPERATION,
+          carriedReason(artifactFileCancellationCause(cause)),
+          { capturedOutput },
+        )
       : undefined;
   if (cause.cleanup === undefined) {
     if (cancellation !== undefined) return cancellation;

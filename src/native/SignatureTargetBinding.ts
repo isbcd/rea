@@ -12,9 +12,10 @@ import { AnalysisError } from "../domain/analysisErrorBase.js";
 import {
   AnalysisAccessDeniedError,
   AnalysisArtifactChangedError,
-  AnalysisCancelledError,
   AnalysisOutputError,
   AnalysisResourceConstraintError,
+  cancelledBy,
+  carriedReason,
 } from "../domain/analysisErrorCore.js";
 import { ProviderAdapterError } from "../domain/providerAdapterError.js";
 import { ProviderCleanupError } from "../domain/providerCleanupError.js";
@@ -61,9 +62,7 @@ const signatureReadFailure = (
   cause: unknown,
 ): AnalysisError => {
   if (cause instanceof RegularFileOperationCancelled)
-    return new AnalysisCancelledError("inspect_signature", {
-      cause: cause.reason,
-    });
+    return cancelledBy("inspect_signature", carriedReason(cause.reason));
   if (cause instanceof AnalysisError) return cause;
   const code =
     cause instanceof Error && "code" in cause ? cause.code : undefined;
@@ -122,9 +121,7 @@ export const withSignatureTarget = async (
           signal?.aborted
             ? analysisErrorWithCancellation(
                 cause === signal.reason ? undefined : failure,
-                new AnalysisCancelledError("inspect_signature", {
-                  cause: signal.reason,
-                }),
+                cancelledBy("inspect_signature", signal),
               )
             : failure,
         );
@@ -175,10 +172,11 @@ export const withSignatureTarget = async (
         result = err(
           analysisErrorWithCancellation(
             result.ok ? undefined : result.error,
-            new AnalysisCancelledError("inspect_signature", {
-              cause: signal.reason,
-              ...(result.ok ? { partialObservation: result.value } : {}),
-            }),
+            cancelledBy(
+              "inspect_signature",
+              signal,
+              result.ok ? { partialObservation: result.value } : {},
+            ),
           ),
         );
       if (cleanup.kind === "failed") {
@@ -199,9 +197,7 @@ export const withSignatureTarget = async (
     const outcome = signal?.aborted
       ? analysisErrorWithCancellation(
           cause === signal.reason ? undefined : primary,
-          new AnalysisCancelledError("inspect_signature", {
-            cause: signal.reason,
-          }),
+          cancelledBy("inspect_signature", signal),
         )
       : primary;
     const retained =
@@ -442,8 +438,7 @@ const bindSignatureTarget = async (
   }
   if (result.ok && signal?.aborted)
     result = err(
-      new AnalysisCancelledError("inspect_signature", {
-        cause: signal.reason,
+      cancelledBy("inspect_signature", signal, {
         diagnostics: {
           snapshot_binding: {
             identity: result.value.identity,
