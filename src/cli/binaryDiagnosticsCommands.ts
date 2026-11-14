@@ -40,8 +40,8 @@ import {
   deliverCliAnalysisEvidence,
 } from "./analysisEvidenceDelivery.js";
 import { BINARY_DIAGNOSTICS_TOOL_CONTRACTS } from "../contracts/native/binaryDiagnosticsToolContracts.js";
+import { contractNamed } from "./contractCliDescription.js";
 import {
-  contractNamed,
   inspectWithService,
   registerContractCommand,
 } from "./contractCommand.js";

@@ -565,12 +565,15 @@ which some clients require even alongside `prefixItems`. Tuples with a rest
 schema also need explicit minimum lengths. Check parser/schema parity for empty,
 short, overlong, and malformed values in both input and output projections.
 
-A CLI command for a tool contract registers through `registerContractCommand`
-in [`contractCommand.ts`](https://github.com/morluto/rea/blob/main/src/cli/contractCommand.ts).
-Its projection names only what the CLI spells differently: positionals,
-caller-relative path fields, option renames, CLI help wording and omitted
-optional fields with a reason. Field schemas, decimal argv tokens and the
-contract's cross-field rules are derived, and
+A CLI command for a tool contract is described by `describeContractCommand` in
+[`contractCliDescription.ts`](https://github.com/morluto/rea/blob/main/src/cli/contractCliDescription.ts)
+and rendered for the CLI framework by `registerContractCommand` in
+[`contractCommand.ts`](https://github.com/morluto/rea/blob/main/src/cli/contractCommand.ts).
+The projection names only what the CLI spells differently: positionals,
+caller-relative path fields, option renames and short flags, CLI help wording,
+omitted optional fields with a reason, and whether the contract's cross-field
+rules refuse at argv parsing or at the service's contract parse. Field schemas
+and decimal argv tokens are derived, and
 `tests/boundary/cli/cliContractCommandParity.test.ts` checks that each projected
 command admits what its contract admits.
 

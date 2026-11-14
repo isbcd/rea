@@ -1,13 +1,13 @@
-import { Cli, z } from "incur";
+import { Parser, z } from "incur";
 import { describe, expect, it } from "vitest";
 
 import { createCli } from "../../../src/cli.js";
 import {
-  contractCommandBindings,
-  registerContractCommand,
-  type ContractCommandBinding,
-} from "../../../src/cli/contractCommand.js";
-import { silentLogger } from "../../../src/logger.js";
+  describeContractCommand,
+  type ContractCliDescription,
+  type ContractCliParameter,
+} from "../../../src/cli/contractCliDescription.js";
+import { contractCommandDescriptions } from "../../../src/cli/contractCommand.js";
 import {
   visitRegisteredCommands,
   type RegisteredCommand,
@@ -21,7 +21,7 @@ const registered = new Map<string, RegisteredCommand>();
 visitRegisteredCommands(cli, (command, path) => {
   registered.set(path, command);
 });
-const bindings = contractCommandBindings(cli);
+const descriptions = contractCommandDescriptions(cli);
 
 const inputJsonSchema = (field: z.ZodType): Record<string, unknown> =>
   z.toJSONSchema(field, { io: "input", unrepresentable: "any" });
@@ -80,16 +80,19 @@ const isNumeric = (field: z.ZodType): boolean => {
   return json.type === "integer" || json.type === "number";
 };
 
+/** Argv omission is an absent key, never an explicit undefined. */
 const admits = (field: z.ZodType, value: unknown): boolean =>
-  field.safeParse(value).success;
+  value === undefined
+    ? z.object({ value: field }).safeParse({}).success
+    : field.safeParse(value).success;
 
 /** What the contract admits for one value the caller typed on the CLI. */
 const expectedAdmission = (
-  binding: ContractCommandBinding["fields"][number],
+  parameter: ContractCliParameter,
   contractField: z.ZodType,
   value: unknown,
 ): boolean => {
-  if (binding.callerPath) {
+  if (parameter.callerPath) {
     // A caller path is validated as typed: an empty value never becomes the
     // working directory. A nonempty value is resolved, then the contract rules.
     if (typeof value !== "string") return admits(contractField, value);
@@ -100,9 +103,27 @@ const expectedAdmission = (
   return admits(contractField, value);
 };
 
+const registeredField = (
+  description: ContractCliDescription,
+  parameter: ContractCliParameter,
+): z.ZodType => {
+  const command = registered.get(description.command)!;
+  const group = (
+    parameter.positional ? command.args : command.options
+  ) as z.ZodObject;
+  return group.shape[parameter.key] as z.ZodType;
+};
+
+const contractShape = (description: ContractCliDescription) =>
+  description.contract.inputSchema.shape as Record<string, z.ZodType>;
+
+const each = descriptions.map(
+  (description) => [description.command, description] as const,
+);
+
 describe("CLI commands projected from tool contracts", () => {
   it("registers the migrated commands", () => {
-    expect(bindings.map((binding) => binding.command)).toEqual(
+    expect(descriptions.map(({ command }) => command)).toEqual(
       expect.arrayContaining([
         "inspect-sqlite-database",
         "inspect-elf-notes",
@@ -111,16 +132,18 @@ describe("CLI commands projected from tool contracts", () => {
     );
   });
 
-  it.each(bindings.map((binding) => [binding.command, binding] as const))(
+  it.each(each)(
     "%s exposes every contract field or declares its omission",
-    (_command, binding) => {
-      const contractFields = Object.keys(binding.contract.inputSchema.shape);
+    (_command, description) => {
       expect(
-        [...binding.fields.map((field) => field.field), ...binding.omitted]
+        [
+          ...description.parameters.map(({ field }) => field),
+          ...Object.keys(description.omitted),
+        ]
           .toSorted()
           .join(),
-      ).toBe(contractFields.toSorted().join());
-      const command = registered.get(binding.command)!;
+      ).toBe(Object.keys(contractShape(description)).toSorted().join());
+      const command = registered.get(description.command)!;
       const argKeys = Object.keys(
         (command.args as z.ZodObject | undefined)?.shape ?? {},
       );
@@ -128,42 +151,38 @@ describe("CLI commands projected from tool contracts", () => {
         (command.options as z.ZodObject | undefined)?.shape ?? {},
       );
       expect(argKeys).toEqual(
-        binding.fields.filter((field) => field.positional).map((f) => f.key),
+        description.parameters
+          .filter(({ positional }) => positional)
+          .map(({ key }) => key),
       );
       expect(optionKeys.toSorted()).toEqual(
-        binding.fields
-          .filter((field) => !field.positional)
-          .map((field) => field.key)
+        description.parameters
+          .filter(({ positional }) => !positional)
+          .map(({ key }) => key)
           .toSorted(),
       );
     },
   );
 
-  it.each(bindings.map((binding) => [binding.command, binding] as const))(
+  it.each(each)(
     "%s admits exactly what its contract admits",
-    (_command, binding) => {
-      const command = registered.get(binding.command)!;
-      const contractShape = binding.contract.inputSchema.shape as Record<
-        string,
-        z.ZodType
-      >;
+    (_command, description) => {
       const mismatches: string[] = [];
-      for (const field of binding.fields) {
-        const group = (
-          field.positional ? command.args : command.options
-        ) as z.ZodObject;
-        const cliField = group.shape[field.key] as z.ZodType;
-        const contractField = contractShape[field.field]!;
-        if (field.callerPath) {
+      for (const parameter of description.parameters) {
+        const cliField = registeredField(description, parameter);
+        const contractField = contractShape(description)[parameter.field]!;
+        // Incur's help reads flag and choice types only through `optional`.
+        expect(cliField, parameter.key).not.toBeInstanceOf(z.ZodExactOptional);
+        if (parameter.callerPath) {
           // Only the absolute-path rule is relaxed, and only by resolution.
-          expect(admits(contractField, "rel/x"), field.field).toBe(false);
+          expect(admits(contractField, "rel/x"), parameter.field).toBe(false);
           expect(admits(contractField, absoluteCallerPath("rel/x"))).toBe(true);
         }
         for (const value of probes(contractField)) {
-          const expected = expectedAdmission(field, contractField, value);
+          const expected = expectedAdmission(parameter, contractField, value);
           if (admits(cliField, value) !== expected)
             mismatches.push(
-              `${field.key}=${JSON.stringify(value)} expected ${String(expected)}`,
+              `${parameter.key}=${JSON.stringify(value)} expected ${String(expected)}`,
             );
         }
       }
@@ -171,23 +190,45 @@ describe("CLI commands projected from tool contracts", () => {
     },
   );
 
-  it.each(bindings.map((binding) => [binding.command, binding] as const))(
+  it.each(each)(
+    "%s takes each boolean contract field as a bare flag",
+    (_command, description) => {
+      for (const parameter of description.parameters) {
+        if (parameter.positional || !parameter.booleanFlag) continue;
+        const options = z.object({
+          [parameter.key]: registeredField(description, parameter),
+        });
+        const flag = `--${parameter.key.replaceAll(/[A-Z]/gu, (c) => `-${c.toLowerCase()}`)}`;
+        expect(Parser.parse([flag], { options }).options, flag).toEqual({
+          [parameter.key]: true,
+        });
+      }
+    },
+  );
+
+  it.each(each)(
     "%s maps parsed argv to an admitted contract input",
-    (_command, binding) => {
-      const command = registered.get(binding.command)!;
-      const args = Object.fromEntries(
-        binding.fields
-          .filter((field) => field.positional)
-          .map((field) => [field.key, "rel/target"]),
-      );
-      const options = (command.options as z.ZodObject).parse({});
-      const input = binding.toContractInput(args, options);
-      expect(binding.contract.inputSchema.safeParse(input).error).toBe(
+    (_command, description) => {
+      const command = registered.get(description.command)!;
+      const values = {
+        ...(command.options as z.ZodObject).parse({}),
+        ...Object.fromEntries(
+          description.parameters
+            .filter(({ positional }) => positional)
+            .map(({ key }) => [key, "rel/target"]),
+        ),
+      };
+      const input = description.toContractInput(values);
+      expect(description.contract.inputSchema.safeParse(input).error).toBe(
         undefined,
       );
-      for (const field of binding.fields.filter((each) => each.callerPath))
-        if (field.positional)
-          expect(input[field.field]).toBe(absoluteCallerPath("rel/target"));
+      for (const parameter of description.parameters)
+        if (parameter.callerPath && parameter.positional) {
+          expect(input[parameter.field]).toBe(absoluteCallerPath("rel/target"));
+          expect(description.callerInputs(values)[parameter.field]).toBe(
+            "rel/target",
+          );
+        }
     },
   );
 
@@ -199,23 +240,18 @@ describe("CLI commands projected from tool contracts", () => {
     ["an array of objects", z.array(z.object({})).optional()],
     ["an array of numbers", z.array(z.number()).optional()],
     ["a tuple", z.tuple([z.string()]).optional()],
-  ])("refuses to register a field that is %s", (_kind, field) => {
+  ])("refuses to describe a field that is %s", (_kind, field) => {
     expect(() =>
-      registerContractCommand(
-        Cli.create("probe"),
-        silentLogger,
+      describeContractCommand(
         { name: "probe", inputSchema: z.object({ field }) },
         { command: "probe", description: "Probe" },
-        async () => null,
       ),
     ).toThrow("probe.field has no argv projection");
   });
 
   it("refuses an input constraint the CLI schema cannot carry", () => {
     expect(() =>
-      registerContractCommand(
-        Cli.create("probe"),
-        silentLogger,
+      describeContractCommand(
         {
           name: "probe",
           inputSchema: z
@@ -223,7 +259,6 @@ describe("CLI commands projected from tool contracts", () => {
             .meta({ not: { required: ["value"] } }),
         },
         { command: "probe", description: "Probe" },
-        async () => null,
       ),
     ).toThrow("probe input keyword not has no CLI projection");
   });
