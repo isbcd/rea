@@ -33,11 +33,20 @@ interface CleanupIssue {
   readonly reason: string;
 }
 
+/** Exit evidence for an authenticated external application, when it applies. */
+type ExternalApplicationExitObservation =
+  | Awaited<ReturnType<typeof observeProcessStartIdentityExit>>
+  | undefined;
+
 interface CleanupState {
   readonly issues: CleanupIssue[];
   readonly resources: Set<string>;
   cleanupResult: ProcessCleanupResult | undefined;
   processStopped: boolean;
+  /** Why document shutdown was or was not confirmed by the bridge request. */
+  shutdownRequest: JsonValue | undefined;
+  /** The final external-application exit observation before retention. */
+  applicationExit: ExternalApplicationExitObservation;
 }
 
 /** Owned capabilities survive failed cleanup until their release is verified. */
@@ -77,6 +86,8 @@ export const cleanupHopperSession = async (
     resources: new Set(),
     cleanupResult: undefined,
     processStopped: input.resources.processSupervisor === undefined,
+    shutdownRequest: undefined,
+    applicationExit: undefined,
   };
   await confirmExternalApplicationExit(
     input.resources,
@@ -100,7 +111,7 @@ export const cleanupHopperSession = async (
     input.releaseTransport(input.socket);
   await stopProcess(input, state);
   // A late authenticated application may exit while shutdown is in flight.
-  await confirmExternalApplicationExit(
+  state.applicationExit = await confirmExternalApplicationExit(
     input.resources,
     input.socket,
     input.releaseTransport,
@@ -145,21 +156,23 @@ export const confirmExternalApplicationExit = async (
   socket: Socket | undefined,
   releaseTransport: (socket: Socket | undefined) => void,
   observeExit: typeof observeProcessStartIdentityExit = observeProcessStartIdentityExit,
-): Promise<void> => {
+): Promise<ExternalApplicationExitObservation> => {
   const application = resources.externalApplication;
   if (
     resources.shutdownConfirmed ||
     resources.launch?.providerLifetime !== "external-application" ||
     application?.identity.state !== "readable"
   )
-    return;
-  if (
-    (await observeExit(application.pid, application.identity.identity)) ===
-    "exited"
-  ) {
+    return undefined;
+  const observed = await observeExit(
+    application.pid,
+    application.identity.identity,
+  );
+  if (observed === "exited") {
     resources.shutdownConfirmed = true;
     releaseTransport(socket);
   }
+  return observed;
 };
 
 const requestShutdown = async (
@@ -172,6 +185,16 @@ const requestShutdown = async (
     input.socket.destroyed ||
     input.activeRequest !== null
   ) {
+    state.shutdownRequest = {
+      status: "not_sent",
+      reason: input.resources.shutdownConfirmed
+        ? "shutdown_already_confirmed"
+        : input.socket === undefined
+          ? "no_bridge_transport"
+          : input.socket.destroyed
+            ? "bridge_transport_closed"
+            : "bridge_operation_active",
+    };
     if (input.activeRequest !== null)
       input.logger.warn(
         {
@@ -207,6 +230,15 @@ const requestShutdown = async (
       shutdown.value,
     );
   }
+  state.shutdownRequest = {
+    method,
+    status: !shutdown.ok
+      ? "failed"
+      : input.resources.shutdownConfirmed
+        ? "confirmed"
+        : "unconfirmed",
+    ...(shutdown.ok ? {} : shutdownErrorDetails(shutdown.error)),
+  };
   if (
     !shutdown.ok ||
     (!input.resources.shutdownConfirmed && state.cleanupResult === undefined)
@@ -247,6 +279,16 @@ const shutdownRequestFailure = (
 ): HopperProcessError => {
   return new HopperProcessError(null, { operation, cause });
 };
+
+/** Name the shutdown failure in retained-cleanup details without its cause text. */
+const shutdownErrorDetails = (
+  error: HopperError,
+): Record<string, JsonValue> => ({
+  error_tag: error._tag,
+  ...(error instanceof HopperProcessError
+    ? { provider_state: error.providerState }
+    : {}),
+});
 
 const shutdownFailureDetails = (
   error: HopperError,
@@ -402,6 +444,12 @@ const cleanupOutcome = (
                 input.resources.externalApplication === undefined
                   ? "not_observed"
                   : input.resources.externalApplication.identity.state,
+              ...(state.shutdownRequest === undefined
+                ? {}
+                : { shutdown_request: state.shutdownRequest }),
+              ...(state.applicationExit === undefined
+                ? {}
+                : { application_exit: state.applicationExit }),
             }
           : {}),
       },

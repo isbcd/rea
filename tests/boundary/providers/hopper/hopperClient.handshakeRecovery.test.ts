@@ -286,7 +286,8 @@ it("recovers an application exit after the first valid handshake occurs during c
   });
   await launcher.fixture.release(next);
   const closed = await closing;
-  if (!closed.ok) throw closed.error;
+  // Report the cleanup diagnostics, not only the error message.
+  expect(closed.ok ? null : projectAnalysisError(closed.error)).toBeNull();
   expect(launcher.fixture.requests.map(({ method }) => method)).toEqual([
     "health",
     "health",
@@ -313,5 +314,5 @@ it("recovers an application exit after the first valid handshake occurs during c
   if (!observed.ok) throw observed.error;
   expect(observed.value).toBe("fixture");
   const reclosed = await client.close();
-  if (!reclosed.ok) throw reclosed.error;
+  expect(reclosed.ok ? null : projectAnalysisError(reclosed.error)).toBeNull();
 });
