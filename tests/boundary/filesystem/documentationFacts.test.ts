@@ -6,7 +6,10 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
 
-import { documentationFactIssues } from "../../../scripts/lib/docs-facts.mjs";
+import {
+  documentationFactIssues,
+  literalToolCountIssues,
+} from "../../../scripts/lib/docs-facts.mjs";
 import type { ProductCatalog } from "../../../scripts/lib/product-catalog.mjs";
 
 const root = fileURLToPath(new URL("../../..", import.meta.url));
@@ -60,6 +63,35 @@ afterEach(async () => {
       .splice(0)
       .map((path) => rm(path, { recursive: true, force: true })),
   );
+});
+
+describe("literal tool counts", () => {
+  it("refuses catalog-size restatements in living prose only", async () => {
+    const directory = await createTestTempDirectory("rea-tool-count-facts-");
+    temporaryRoots.push(directory);
+    const write = async (path: string, content: string) => {
+      await mkdir(dirname(join(directory, path)), { recursive: true });
+      await writeFile(join(directory, path), content);
+    };
+    await write("README.md", "REA exposes 255 tools.\n");
+    await write(
+      "docs/guides/a.md",
+      "One line.\nThe client saw all 1,024 MCP tools.\nIt registered 0 tools.\n",
+    );
+    await write("website/public/index.html", "<p>240 public tools</p>");
+    await write("docs/verification/run.md", "The catalog had 240 tools.\n");
+    await write("docs/releases/1.0.md", "Adds 12 tools.\n");
+    await write("docs/guides/b.md", "Six initial tools, then 34 loaded.\n");
+    await expect(literalToolCountIssues(directory)).resolves.toEqual([
+      'README.md:1: literal tool count "255 tools"; link the generated catalog instead',
+      'docs/guides/a.md:2: literal tool count "1,024 MCP tools"; link the generated catalog instead',
+      'website/public/index.html:1: literal tool count "240 public tools"; link the generated catalog instead',
+    ]);
+  });
+
+  it("finds none in the repository's living prose", async () => {
+    await expect(literalToolCountIssues(root)).resolves.toEqual([]);
+  });
 });
 
 describe("translated README facts", () => {

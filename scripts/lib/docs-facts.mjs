@@ -93,11 +93,71 @@ export const skillReferenceIssues = async (skillRoot) => {
   return issues;
 };
 
+// Living prose that would restate the catalog size. Dated records keep the
+// count they measured: release notes, feature specs, verification records and
+// decision records describe a past build.
+const LIVING_PROSE_ROOTS = [
+  "README.md",
+  "CONTRIBUTING.md",
+  "AGENTS.md",
+  "docs",
+  ".agents/skills",
+  "website/public",
+];
+const DATED_PROSE = /^docs\/(?:releases|specs|verification|adr)\//u;
+const PROSE_FILE = /\.(?:md|html)$/u;
+// A count of ten or more tools, such as "240 tools" or "all 1,024 MCP tools".
+const LITERAL_TOOL_COUNT =
+  /\b[1-9]\d*(?:,\d{3})*\s+(?:(?:public|MCP|canonical|registered|advertised|available)\s+)*tools\b/giu;
+
+const proseFiles = async (root) => {
+  const files = [];
+  for (const start of LIVING_PROSE_ROOTS) {
+    let entries;
+    try {
+      entries = (await stat(join(root, start))).isDirectory()
+        ? (await readdir(join(root, start), { recursive: true })).map(
+            (entry) => `${start}/${entry.split(sep).join("/")}`,
+          )
+        : [start];
+    } catch (cause) {
+      if (cause?.code === "ENOENT") continue;
+      throw cause;
+    }
+    for (const path of entries)
+      if (PROSE_FILE.test(path) && !DATED_PROSE.test(path)) files.push(path);
+  }
+  return files.sort();
+};
+
+/**
+ * Refuse a literal tool count in living prose. The catalog owns the count
+ * (docs/public/product-catalog.json), and every hand-written copy goes stale
+ * when a tool is added.
+ */
+export const literalToolCountIssues = async (root) => {
+  const issues = [];
+  for (const path of await proseFiles(root)) {
+    const content = await readFile(join(root, path), "utf8");
+    for (const match of content.matchAll(LITERAL_TOOL_COUNT)) {
+      if (Number(match[0].split(/\s/u)[0].replaceAll(",", "")) < 10) continue;
+      const line = content.slice(0, match.index).split("\n").length;
+      issues.push(
+        `${path}:${line}: literal tool count "${match[0]}"; link the generated catalog instead`,
+      );
+    }
+  }
+  return issues;
+};
+
 /** Return every caller-visible documentation mismatch against canonical facts. */
 export const documentationFactIssues = async (root, catalog) => {
-  const issues = await skillReferenceIssues(
-    join(root, "skills/reverse-engineer-anything"),
-  );
+  const issues = [
+    ...(await skillReferenceIssues(
+      join(root, "skills/reverse-engineer-anything"),
+    )),
+    ...(await literalToolCountIssues(root)),
+  ];
   const translatedFolder = join(root, "docs/readme");
   let translatedNames = [];
   try {

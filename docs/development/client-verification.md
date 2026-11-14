@@ -48,8 +48,9 @@ and [renderer usage notes](https://github.com/earendil-works/pi/blob/b45e0ebcc5a
 The original contributor reported a run on 2026-11-11 on Linux (Fedora 45),
 using Cline CLI 3.0.74 and the integration based on REA `main` at `9924bf344`.
 That run checked client config listing and a direct registered-server MCP
-handshake (254 tools on that build). It predates the verifier lifecycle changes
-below and does not establish their real-client behavior.
+handshake that listed the complete catalog of that build. It predates the
+verifier lifecycle changes below and does not establish their real-client
+behavior.
 
 `npm run verify:cline-client` creates its sandbox home before launching commands
 and removes inherited `CLINE_MCP_SETTINGS_PATH`, `CLINE_DATA_DIR` and `CLINE_DIR`.
