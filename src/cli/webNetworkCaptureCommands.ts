@@ -132,13 +132,15 @@ export const registerWebNetworkCaptureCommands = (
                       : { capture_timeout_ms: options.captureTimeoutMs }),
                   },
                   { signal },
-                  {
-                    capture: args.capturePath,
-                    ...(options.protobufSchema === undefined
-                      ? {}
-                      : { descriptor: options.protobufSchema }),
-                  },
                 ),
+              callerInputPath: args.capturePath,
+              ...(options.protobufSchema === undefined
+                ? {}
+                : {
+                    callerInputPaths: {
+                      descriptor_set_path: options.protobufSchema,
+                    },
+                  }),
               service,
               providerId: "web-network-capture",
               operation: "inspect_web_network_capture",

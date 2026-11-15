@@ -154,14 +154,16 @@ export const deliverCliAnalysisEvidence = async (
       undefined,
       { redactFailure },
     ).then(projectCliAnalysisResult);
+  const callerInputPath =
+    input.callerInputPath === undefined ||
+    revealsSensitiveValue(input.callerInputPath, input)
+      ? undefined
+      : input.callerInputPath;
+  const callerInputPaths = safeCallerInputPaths(input);
   const complete = await finishAnalysisCommand(
-    input.callerInputPath === undefined
+    callerInputPath === undefined && callerInputPaths === undefined
       ? run
-      : bindCliEvidenceCallerPath(
-          input.callerInputPath,
-          run,
-          input.callerInputPaths,
-        ),
+      : bindCliEvidenceCallerPath(callerInputPath, run, callerInputPaths),
     service,
     providerId,
     operation,
@@ -333,18 +335,39 @@ const publishDeliveredEvidence = async (
   return ok({ delivered: published.value.delivered, receipt });
 };
 
+/** Whether a caller-selected path contains an excluded sensitive literal. */
+const revealsSensitiveValue = (
+  path: string,
+  input: Pick<CliEvidenceDelivery, "sensitiveValues">,
+): boolean =>
+  input.sensitiveValues?.some(
+    (literal) => literal !== "" && path.includes(literal),
+  ) ?? false;
+
+/**
+ * The named caller paths the Evidence may retain: a choice that contains an
+ * excluded sensitive literal is omitted whole, so a repeated option never
+ * loses its order.
+ */
+const safeCallerInputPaths = (
+  input: Pick<CliEvidenceDelivery, "callerInputPaths" | "sensitiveValues">,
+): CallerInputPaths | undefined => {
+  if (input.callerInputPaths === undefined) return undefined;
+  const kept = Object.entries(input.callerInputPaths).filter(([, value]) =>
+    (typeof value === "string" ? [value] : value).every(
+      (path) => !revealsSensitiveValue(path, input),
+    ),
+  );
+  return kept.length === 0 ? undefined : Object.fromEntries(kept);
+};
+
 /** A receipt omits a path that contains an excluded sensitive literal. */
 const bundleReceipt = <Bytes extends JsonValue>(
   path: string | undefined,
   bytes: Bytes,
   input: Pick<CliEvidenceDelivery, "sensitiveValues">,
 ): { readonly path?: string; readonly bytes: Bytes } => ({
-  ...(path === undefined ||
-  input.sensitiveValues?.some(
-    (literal) => literal !== "" && path.includes(literal),
-  )
-    ? {}
-    : { path }),
+  ...(path === undefined || revealsSensitiveValue(path, input) ? {} : { path }),
   bytes,
 });
 
