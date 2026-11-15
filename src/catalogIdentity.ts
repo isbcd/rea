@@ -113,7 +113,12 @@ const canonicalJson = (value: unknown): string => {
 const sha256 = (encoded: string): string =>
   createHash("sha256").update(encoded).digest("hex");
 
-const digestCatalogs = (
+/**
+ * Digests of an already presented tool and prompt catalog. Exported so tests
+ * can compare the composed combined document with whole-document
+ * canonicalization.
+ */
+export const digestCatalogs = (
   catalog: ReturnType<typeof presentToolCatalog>,
   prompts: ReturnType<typeof createPromptCatalog>,
   outputSchemaProfile: McpOutputSchemaProfile,
