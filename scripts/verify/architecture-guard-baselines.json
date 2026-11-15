@@ -374,10 +374,6 @@
     "src/reference/ReferenceSourceReaderEntries.ts": 1,
     "src/sqlite/SqliteDatabaseProvider.ts": 1
   },
-  "verifier-fixture-root": {
-    "scripts/verify-test-temp-hygiene.mjs": 1,
-    "scripts/verify-windows-native.mjs": 1
-  },
   "macho-load-command-literal": {},
   "lifecycle-plain-throw": {
     "src/android/JadxWorkspaceRoot.ts": 4,
